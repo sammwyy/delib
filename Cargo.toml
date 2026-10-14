@@ -1,0 +1,14 @@
+[package]
+name = "delib"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Shared Linux desktop integration primitives"
+repository = "https://github.com/sammwyy/delib"
+homepage = "https://github.com/sammwyy/delib"
+readme = "README.md"
+keywords = ["linux", "desktop", "xdg", "icons", "freedesktop"]
+categories = ["os::linux-apis", "filesystem"]
+
+[lib]
+path = "src/lib.rs"
