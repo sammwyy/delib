@@ -5,6 +5,7 @@
 //! charge of rendering or decoding those resources.
 #![forbid(unsafe_code)]
 
+pub mod application_icons;
 pub mod desktop_entry;
 pub mod icons;
 pub mod mimeapps;

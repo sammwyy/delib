@@ -127,8 +127,17 @@ impl DesktopEntry {
 /// Finds installed desktop entries, respecting data-directory precedence and
 /// hidden per-user overrides. `id` is the freedesktop desktop-file ID.
 pub fn installed_applications(paths: &XdgPaths) -> Vec<DesktopEntry> {
+    installed_applications_in(paths.application_dirs())
+}
+
+/// Finds application entries in explicit directories, preserving their input
+/// precedence. This also supports application sources that extend XDG, such
+/// as Flatpak's exported desktop-entry directories.
+pub fn installed_applications_in(
+    directories: impl IntoIterator<Item = PathBuf>,
+) -> Vec<DesktopEntry> {
     let mut entries = BTreeMap::new();
-    for directory in paths.application_dirs() {
+    for directory in directories {
         scan(&directory, "", &mut entries);
     }
     entries.into_values().collect()
