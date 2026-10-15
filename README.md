@@ -1,9 +1,28 @@
 # delib
 
 `delib` is a small, toolkit-agnostic Rust library for Linux desktop integration.
-It currently provides standards-compliant icon-theme discovery and resolution;
-future modules can add similarly focused desktop primitives without coupling an
-application to a specific GUI toolkit or compositor.
+It provides standards-compliant XDG paths, desktop-entry and MIME-app lookup,
+icon themes, and sound themes without coupling an application to a GUI toolkit
+or compositor.
+
+## Desktop entries and MIME applications
+
+`desktop_entry` reads `.desktop` files, including localized fields and safe
+`Exec` expansion (it never invokes a shell). `mimeapps` implements the XDG
+MIME Apps search order, including desktop-specific `mimeapps.list` files.
+
+```rust
+use delib::{mimeapps::MimeApps, xdg::XdgPaths};
+
+let handler = MimeApps::new(XdgPaths::default())
+    .default_application("application/pdf");
+```
+
+## Sound themes
+
+`sounds` resolves named events using the Sound Theme Specification. It follows
+theme inheritance and `freedesktop`, understands profiles such as `stereo`,
+and reports `.disabled` masks distinctly from missing events.
 
 ## Icon themes
 

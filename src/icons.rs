@@ -4,6 +4,7 @@
 //! the best available icon file for a selected theme. It honours `index.theme`,
 //! size and scale metadata, inherited themes, `hicolor`, and unthemed pixmaps.
 
+use crate::xdg::XdgPaths;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -302,15 +303,7 @@ pub fn system_icon_theme_with_override(variable: Option<&str>) -> String {
 
 /// Returns XDG data directories in user-to-system search order.
 pub fn xdg_data_directories() -> Vec<PathBuf> {
-    let mut paths = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
-        .into_iter()
-        .collect::<Vec<_>>();
-    let system =
-        std::env::var_os("XDG_DATA_DIRS").unwrap_or_else(|| "/usr/local/share:/usr/share".into());
-    paths.extend(std::env::split_paths(&system));
-    paths
+    XdgPaths::default().data_search_paths()
 }
 
 /// Lists installed, user-selectable icon themes.
