@@ -4,7 +4,7 @@
 //! compositors keep ownership of image decoding, scaling, and their caches.
 
 use crate::{
-    desktop_entry::{installed_applications_in, DesktopEntry},
+    desktop_entry::installed_applications_in,
     icons::{IconRequest, IconResolver},
     xdg::XdgPaths,
 };
@@ -13,7 +13,7 @@ use std::{collections::HashMap, path::PathBuf};
 /// Resolves an application ID (for example a Wayland `app_id`) to its icon.
 #[derive(Clone)]
 pub struct ApplicationIconResolver {
-    applications: HashMap<String, DesktopEntry>,
+    applications: HashMap<String, Option<String>>,
     icons: IconResolver,
 }
 
@@ -35,7 +35,7 @@ impl ApplicationIconResolver {
             .into_iter()
             .filter_map(|entry| {
                 let id = entry.id()?.to_owned();
-                Some((id, entry))
+                Some((id, entry.icon().map(str::to_owned)))
             })
             .collect();
         Self {
@@ -48,24 +48,24 @@ impl ApplicationIconResolver {
     /// `Icon` value has priority; the app ID itself is used as a practical
     /// fallback for clients that do not ship a desktop entry.
     pub fn resolve(&self, application_id: &str, size: u32, scale: u32) -> Option<PathBuf> {
-        self.resolve_inner(application_id, size, scale, false)
+        self.resolve_with_extensions(application_id, size, scale, &["svg", "png"])
     }
 
     /// Like [`Self::resolve`], but returns only raster image files.
     pub fn resolve_raster(&self, application_id: &str, size: u32, scale: u32) -> Option<PathBuf> {
-        self.resolve_inner(application_id, size, scale, true)
+        self.resolve_with_extensions(application_id, size, scale, &["png", "jpg", "jpeg"])
     }
 
-    fn resolve_inner(
+    /// Resolves supported formats in caller preference order within each matching directory.
+    pub fn resolve_with_extensions(
         &self,
         application_id: &str,
         size: u32,
         scale: u32,
-        raster: bool,
+        extensions: &[&str],
     ) -> Option<PathBuf> {
         let mut names = self
-            .entry_for(application_id)
-            .and_then(|entry| entry.icon())
+            .icon_for(application_id)
             .filter(|icon| !icon.trim().is_empty())
             .map(str::to_owned)
             .into_iter()
@@ -80,14 +80,10 @@ impl ApplicationIconResolver {
             size,
             scale: scale.max(1),
         };
-        if raster {
-            self.icons.resolve_raster(request)
-        } else {
-            self.icons.resolve(request)
-        }
+        self.icons.resolve_with_extensions(request, extensions)
     }
 
-    fn entry_for(&self, application_id: &str) -> Option<&DesktopEntry> {
+    fn icon_for(&self, application_id: &str) -> Option<&str> {
         application_id_candidates(application_id)
             .into_iter()
             .find_map(|candidate| {
@@ -98,6 +94,7 @@ impl ApplicationIconResolver {
                 };
                 self.applications.get(&id)
             })
+            .and_then(Option::as_deref)
     }
 }
 
@@ -163,6 +160,103 @@ mod tests {
         assert_eq!(
             resolver.resolve_raster("org.example.App.desktop", 32, 1),
             Some(icon)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn retains_only_icon_values_and_honors_desktop_entry_precedence() {
+        let root =
+            std::env::temp_dir().join(format!("delib-app-icon-metadata-{}", std::process::id()));
+        let mut paths = paths(&root);
+        paths.data_dirs.push(root.join("system"));
+        let user = paths.data_home.join("applications");
+        let system = paths.data_dirs[0].join("applications");
+        fs::create_dir_all(&user).unwrap();
+        fs::create_dir_all(&system).unwrap();
+        let mut metadata = "[Desktop Entry]\nType=Application\nIcon=chosen\n".to_owned();
+        for index in 0..1000 {
+            metadata.push_str(&format!("Name[x-{index}]={}\n", "x".repeat(1024)));
+        }
+        fs::write(user.join("large.desktop"), metadata).unwrap();
+        fs::write(
+            user.join("empty.desktop"),
+            "[Desktop Entry]\nType=Application\nName=User\n",
+        )
+        .unwrap();
+        fs::write(
+            system.join("empty.desktop"),
+            "[Desktop Entry]\nType=Application\nIcon=system-only\n",
+        )
+        .unwrap();
+        let resolver = ApplicationIconResolver::with_paths(&paths, "hicolor");
+        assert_eq!(
+            resolver.applications["large.desktop"].as_deref(),
+            Some("chosen")
+        );
+        assert_eq!(resolver.applications["empty.desktop"], None);
+        let retained: usize = ["large.desktop", "empty.desktop"]
+            .into_iter()
+            .map(|id| resolver.applications.get_key_value(id).unwrap())
+            .map(|(id, icon)| id.capacity() + icon.as_ref().map_or(0, String::capacity))
+            .sum();
+        assert!(retained < 128);
+        assert_eq!(resolver.icon_for("large"), Some("chosen"));
+        assert_eq!(resolver.icon_for("large.desktop"), Some("chosen"));
+        assert_eq!(resolver.icon_for("empty"), None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn requested_formats_preserve_theme_priority_and_format_preferences() {
+        let root =
+            std::env::temp_dir().join(format!("delib-app-icon-formats-{}", std::process::id()));
+        let paths = paths(&root);
+        let apps = paths.data_home.join("applications");
+        fs::create_dir_all(&apps).unwrap();
+        fs::write(
+            apps.join("test.desktop"),
+            "[Desktop Entry]\nType=Application\nIcon=chosen\n",
+        )
+        .unwrap();
+        for (theme, extra) in [("Child", "Inherits=Parent\n"), ("Parent", "")] {
+            let theme = paths.data_home.join("icons").join(theme);
+            fs::create_dir_all(theme.join("24/apps")).unwrap();
+            fs::write(theme.join("index.theme"), format!("[Icon Theme]\nName=Test\n{extra}Directories=24/apps\n[24/apps]\nSize=24\nType=Fixed\n")).unwrap();
+        }
+        let child = paths.data_home.join("icons/Child/24/apps");
+        fs::write(child.join("chosen.jpeg"), b"jpeg").unwrap();
+        fs::write(
+            paths.data_home.join("icons/Parent/24/apps/chosen.svg"),
+            b"svg",
+        )
+        .unwrap();
+        let resolver = ApplicationIconResolver::with_paths(&paths, "Child");
+        let formats = &["svg", "png", "jpg", "jpeg"];
+        assert_eq!(
+            resolver.resolve_with_extensions("test", 24, 1, formats),
+            Some(child.join("chosen.jpeg"))
+        );
+        fs::write(child.join("chosen.svg"), b"svg").unwrap();
+        assert_eq!(
+            resolver.resolve_with_extensions("test", 24, 1, formats),
+            Some(child.join("chosen.svg"))
+        );
+        assert_eq!(
+            resolver.resolve_raster("test", 24, 1),
+            Some(child.join("chosen.jpeg"))
+        );
+        assert_eq!(resolver.resolve_with_extensions("test", 24, 1, &[]), None);
+        fs::write(
+            apps.join("fallback.desktop"),
+            "[Desktop Entry]\nType=Application\nIcon=not-installed\n",
+        )
+        .unwrap();
+        fs::write(child.join("fallback.png"), b"png").unwrap();
+        let resolver = ApplicationIconResolver::with_paths(&paths, "Child");
+        assert_eq!(
+            resolver.resolve_with_extensions("fallback", 24, 1, formats),
+            Some(child.join("fallback.png"))
         );
         fs::remove_dir_all(root).unwrap();
     }

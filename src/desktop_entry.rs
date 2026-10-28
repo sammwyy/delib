@@ -260,7 +260,7 @@ fn expand_argument(
     }
     if argument == "%U" {
         *used_file_code = true;
-        return files.iter().map(file_uri).collect();
+        return files.iter().map(|path| file_uri(path)).collect();
     }
     if argument == "%i" {
         return entry
@@ -296,7 +296,7 @@ fn expand_argument(
     }
     (!result.is_empty()).then_some(result).into_iter().collect()
 }
-fn file_uri(path: &PathBuf) -> String {
+fn file_uri(path: &Path) -> String {
     let mut value = String::from("file://");
     for byte in path.as_os_str().as_encoded_bytes() {
         if byte.is_ascii_alphanumeric() || matches!(*byte, b'/' | b'.' | b'-' | b'_' | b'~') {

@@ -80,7 +80,8 @@ impl IconResolver {
         self.resolve_with_extensions(request, &["png", "jpg", "jpeg"])
     }
 
-    fn resolve_with_extensions(
+    /// Resolves supported formats in caller preference order within each matching directory.
+    pub fn resolve_with_extensions(
         &self,
         request: IconRequest,
         extensions: &[&str],
@@ -93,6 +94,7 @@ impl IconResolver {
         }
         let mut visited = HashSet::new();
         for name in &request.names {
+            visited.clear();
             if let Some(path) =
                 self.resolve_theme(&self.theme, name, &request, extensions, &mut visited)
             {
@@ -101,6 +103,7 @@ impl IconResolver {
         }
         if self.theme != "hicolor" {
             for name in &request.names {
+                visited.clear();
                 if let Some(path) =
                     self.resolve_theme("hicolor", name, &request, extensions, &mut visited)
                 {
