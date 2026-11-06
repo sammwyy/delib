@@ -148,7 +148,7 @@ mod tests {
             app_dir.join("org.example.App.desktop"),
             format!(
                 "[Desktop Entry]\nType=Application\nIcon={}\n",
-                icon.display()
+                icon.to_string_lossy().replace('\\', "\\\\")
             ),
         )
         .unwrap();
